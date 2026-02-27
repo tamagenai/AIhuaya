@@ -2,7 +2,6 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -17,45 +16,67 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    // ★★★ここにSTEP 2で取得したGASのURLを貼り付けてください★★★
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbzjkzOhpae-QPAI7JITgZoJtD2hp_kW8RfmOL0rmIoEJCOx73N5gG677QYu7Ow1E3Ob/exec";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbwg_UlQR6x4ebkLLSVef-x2DcY7_pfzuMZhTH5FV-yCdCiFeZTFwRptiWlEfWdLZ4ro/exec";
 
     const { useState, useRef, useEffect } = React;
-
-    const CONVERSATION =[
-      { id: "1", speaker: "山本", chinese: "李华，好久不见。", pinyin: "Lǐ Huá, hǎojiǔ bújiàn.", japanese: "李華、久しぶり。" },
-      { id: "2", speaker: "李华", chinese: "好久不见。你最近怎么样？", pinyin: "Hǎojiǔ bújiàn. Nǐ zuìjìn zěnmeyàng?", japanese: "久しぶり。最近どう？" },
-      { id: "3", speaker: "山本", chinese: "我下个月有汉语考试，非常忙。", pinyin: "Wǒ xià ge yuè yǒu Hànyǔ kǎoshì, fēicháng máng.", japanese: "来月中国語の試験があって、とても忙しいんだ。" }
-    ];
-
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     function App() {
-      const [activeLine, setActiveLine] = useState(null);
+      const [sheets, setSheets] = useState([]);
+      const[currentSheet, setCurrentSheet] = useState("");
+      const [conversation, setConversation] = useState([]);
+      const[activeLine, setActiveLine] = useState(null);
       const [isRecording, setIsRecording] = useState(false);
       const [isPlaying, setIsPlaying] = useState(null);
       const[evalResults, setEvalResults] = useState({});
-      const [loadingEval, setLoadingEval] = useState(null);
+      const [isLoading, setIsLoading] = useState(true);
+      const[loadingEval, setLoadingEval] = useState(null);
       const recognition = useRef(null);
 
       useEffect(() => {
+        const init = async () => {
+          try {
+            const sheetNames = await fetchFromGAS({ action: "getSheets" });
+            setSheets(sheetNames);
+            if (sheetNames.length > 0) loadLesson(sheetNames[0]);
+            else setIsLoading(false);
+          } catch (e) {
+            alert("スプレッドシートの読み込みに失敗: " + e.message);
+            setIsLoading(false);
+          }
+        };
+        init();
+
         if (SpeechRecognition) {
           recognition.current = new SpeechRecognition();
           recognition.current.lang = 'zh-CN';
           recognition.current.interimResults = false;
           recognition.current.onend = () => setIsRecording(false);
           recognition.current.onerror = (e) => {
-            alert("マイクエラー: " + e.error);
+            alert("マイクエラー: " + e.error + "\n(※iPhoneの場合、https通信でないとマイクは動きません)");
             setIsRecording(false);
           };
         }
       },[]);
 
-      // GASと通信する関数 (google.script.run の代わり)
+      const loadLesson = async (sheetName) => {
+        setIsLoading(true);
+        setCurrentSheet(sheetName);
+        setEvalResults({});
+        try {
+          const data = await fetchFromGAS({ action: "getLesson", sheetName: sheetName });
+          setConversation(data);
+        } catch (e) {
+          alert("課の読み込みに失敗: " + e.message);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
       const fetchFromGAS = async (payload) => {
         const response = await fetch(GAS_URL, {
           method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" }, // エラー回避のためtext/plain指定
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify(payload)
         });
         const result = await response.json();
@@ -63,23 +84,34 @@
         return result.data;
       };
 
-      const playAudio = async (line) => {
+      // ★Web Speech API (ブラウザ標準機能) で音声を読み上げる処理に変更
+      const playAudio = (line) => {
         if (isPlaying) return;
-        setIsPlaying(line.id);
         
-        try {
-          const base64 = await fetchFromGAS({ action: "generateSpeech", text: line.chinese });
-          const audio = new Audio("data:audio/wav;base64," + base64);
-          audio.onended = () => setIsPlaying(null);
-          audio.play();
-        } catch(err) {
-          console.error(err);
-          setIsPlaying(null);
-          const uttr = new SpeechSynthesisUtterance(line.chinese);
-          uttr.lang = 'zh-CN';
-          uttr.onend = () => setIsPlaying(null);
-          window.speechSynthesis.speak(uttr);
+        // ブラウザが音声合成に対応しているかチェック
+        if (!window.speechSynthesis) {
+          alert("お使いのブラウザは音声読み上げに対応していません。");
+          return;
         }
+
+        // もし現在別の音声が流れていたらストップさせる
+        window.speechSynthesis.cancel();
+        
+        setIsPlaying(line.id);
+
+        // 読み上げる文章をセット
+        const utterance = new SpeechSynthesisUtterance(line.chinese);
+        utterance.lang = 'zh-CN'; // 中国語（簡体字）に設定
+        utterance.rate = 0.9;     // 少しゆっくり発音させる（1.0が標準。お好みで調整してください）
+        
+        utterance.onend = () => setIsPlaying(null);
+        utterance.onerror = (e) => {
+          console.error("音声読み上げエラー:", e);
+          setIsPlaying(null);
+        };
+
+        // 読み上げ開始
+        window.speechSynthesis.speak(utterance);
       };
 
       const toggleMic = (line) => {
@@ -88,7 +120,7 @@
           return;
         }
         if (!recognition.current) {
-          alert("このブラウザは音声認識に対応していません。Chromeをお使いください。");
+          alert("お使いのブラウザは音声認識に対応していません。");
           return;
         }
         setActiveLine(line.id);
@@ -104,11 +136,8 @@
       const evaluate = async (line, transcript) => {
         setLoadingEval(line.id);
         try {
-          const res = await fetchFromGAS({ 
-            action: "evaluatePronunciation", 
-            targetText: line.chinese, 
-            userTranscript: transcript 
-          });
+          // 発音の評価だけはGemini AI（GAS）を使ってスコアを出してもらう
+          const res = await fetchFromGAS({ action: "evaluatePronunciation", targetText: line.chinese, userTranscript: transcript });
           setEvalResults(prev => ({ ...prev,[line.id]: { ...res, transcript } }));
         } catch(err) {
           alert("評価エラー:\n" + err.message);
@@ -119,42 +148,58 @@
 
       return (
         <div className="p-4 md:p-10 max-w-2xl mx-auto">
-          <h1 className="text-4xl font-serif mb-10 text-center border-b pb-5">華雅 <span className="italic text-yellow-600">Kaga</span></h1>
-          <div className="space-y-8">
-            {CONVERSATION.map(line => (
-              <div key={line.id} className={`border-l-4 pl-4 py-4 bg-white shadow-sm rounded-r-lg transition-all ${activeLine === line.id ? 'border-yellow-500 ring-1 ring-yellow-200' : 'border-gray-200'}`}>
-                <p className="text-[10px] text-yellow-700 font-bold uppercase tracking-widest mb-1">{line.speaker}</p>
-                <div onClick={() => playAudio(line)} className="cursor-pointer hover:bg-gray-50 p-2 rounded transition">
-                  <p className="text-3xl chinese-text mb-1 flex items-center gap-2">
-                    {line.chinese}
-                    {isPlaying === line.id && <span className="text-xs animate-pulse text-yellow-500">Playing...</span>}
-                  </p>
-                  <p className="text-sm text-gray-400 mb-2 font-mono">{line.pinyin}</p>
-                  <p className="text-sm italic text-gray-600 border-t pt-2">{line.japanese}</p>
-                </div>
-                
-                <div className="mt-4 flex items-center gap-4">
-                  <button 
-                    onClick={() => toggleMic(line)}
-                    className={`text-[10px] px-6 py-2 rounded-full font-bold transition-all ${isRecording && activeLine === line.id ? 'bg-red-500 text-white animate-pulse' : 'bg-black text-white hover:bg-gray-800'}`}
-                  >
-                    {isRecording && activeLine === line.id ? 'STOPPING...' : '🎤 PRACTICE'}
-                  </button>
-                  {loadingEval === line.id && <span className="text-[10px] text-gray-400 animate-spin">⌛ Evaluating...</span>}
-                </div>
-
-                {evalResults[line.id] && (
-                  <div className="mt-4 p-3 bg-gray-50 rounded text-sm border-t border-gray-100">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-bold text-yellow-600">Score: {evalResults[line.id].score}</span>
-                      <span className="text-gray-400 text-xs">"{evalResults[line.id].transcript}"</span>
-                    </div>
-                    <p className="text-gray-600 text-xs">{evalResults[line.id].feedback}</p>
-                  </div>
-                )}
-              </div>
-            ))}
+          <h1 className="text-4xl font-serif mb-6 text-center pb-2">華雅 <span className="italic text-yellow-600">Kaga</span></h1>
+          
+          <div className="mb-8 text-center border-b pb-6">
+            <select 
+              value={currentSheet} 
+              onChange={(e) => loadLesson(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-lg bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              disabled={isLoading}
+            >
+              {sheets.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
+
+          {isLoading ? (
+            <div className="text-center text-gray-500 text-lg mt-10 animate-pulse">読み込み中...</div>
+          ) : (
+            <div className="space-y-8">
+              {conversation.map(line => (
+                <div key={line.id} className={`border-l-4 pl-4 py-4 bg-white shadow-sm rounded-r-lg transition-all ${activeLine === line.id ? 'border-yellow-500 ring-1 ring-yellow-200' : 'border-gray-200'}`}>
+                  <p className="text-[10px] text-yellow-700 font-bold uppercase tracking-widest mb-1">{line.speaker}</p>
+                  <div onClick={() => playAudio(line)} className="cursor-pointer hover:bg-gray-50 p-2 rounded transition">
+                    <p className="text-3xl chinese-text mb-1 flex items-center gap-2">
+                      {line.chinese}
+                      {isPlaying === line.id && <span className="text-xs animate-pulse text-yellow-500">Playing...</span>}
+                    </p>
+                    <p className="text-sm text-gray-400 mb-2 font-mono">{line.pinyin}</p>
+                    <p className="text-sm italic text-gray-600 border-t pt-2">{line.japanese}</p>
+                  </div>
+                  
+                  <div className="mt-4 flex items-center gap-4">
+                    <button 
+                      onClick={() => toggleMic(line)}
+                      className={`text-[10px] px-6 py-2 rounded-full font-bold transition-all ${isRecording && activeLine === line.id ? 'bg-red-500 text-white animate-pulse' : 'bg-black text-white hover:bg-gray-800'}`}
+                    >
+                      {isRecording && activeLine === line.id ? 'STOPPING...' : '🎤 PRACTICE'}
+                    </button>
+                    {loadingEval === line.id && <span className="text-sm text-gray-400 animate-spin">⌛ 評価中...</span>}
+                  </div>
+
+                  {evalResults[line.id] && (
+                    <div className="mt-4 p-4 bg-gray-50 rounded border-t border-gray-100">
+                      <div className="flex flex-col gap-1 mb-3 border-b border-gray-200 pb-2">
+                        <span className="font-bold text-yellow-600 text-lg">AIスコア: {evalResults[line.id].score} 点</span>
+                        <span className="text-gray-500 text-lg">あなたの発音: "{evalResults[line.id].transcript}"</span>
+                      </div>
+                      <p className="text-gray-800 text-lg leading-relaxed">{evalResults[line.id].feedback}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       );
     }
