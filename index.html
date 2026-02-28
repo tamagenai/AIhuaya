@@ -36,14 +36,15 @@
       const [sheets, setSheets] = useState([]);
       const [currentSheet, setCurrentSheet] = useState("");
       const [conversation, setConversation] = useState([]);
+      const [videoUrl, setVideoUrl] = useState(""); // ★追加：動画URLを保存するState
       const [activeLine, setActiveLine] = useState(null);
-      const[isRecording, setIsRecording] = useState(false);
+      const [isRecording, setIsRecording] = useState(false);
       const [isPlaying, setIsPlaying] = useState(null);
-      const[evalResults, setEvalResults] = useState({});
+      const [evalResults, setEvalResults] = useState({});
       const [isLoading, setIsLoading] = useState(true);
       const [loadingEval, setLoadingEval] = useState(null);
       
-      const[speakerColors, setSpeakerColors] = useState({});
+      const [speakerColors, setSpeakerColors] = useState({});
       
       const recognition = useRef(null);
 
@@ -79,9 +80,13 @@
         setEvalResults({});
         try {
           const data = await fetchFromGAS({ action: "getLesson", sheetName: sheetName });
-          setConversation(data);
           
-          const uniqueSpeakers =[...new Set(data.map(item => item.speaker).filter(Boolean))];
+          // ★修正：GASから送られてきたオブジェクトから、会話データと動画URLをそれぞれセットする
+          setConversation(data.conversation);
+          setVideoUrl(data.videoUrl);
+          
+          // ★修正：data.map ではなく data.conversation.map に変更
+          const uniqueSpeakers =[...new Set(data.conversation.map(item => item.speaker).filter(Boolean))];
           const newSpeakerColors = {};
           uniqueSpeakers.forEach((speaker, index) => {
             newSpeakerColors[speaker] = PALETTES[index % PALETTES.length];
@@ -174,6 +179,15 @@
             >
               {sheets.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+
+            {/* ★追加：動画URLが存在する場合のみ、動画リンクボタンを表示 */}
+            {videoUrl && (
+              <div className="mt-4">
+                <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white font-bold rounded-full hover:bg-red-700 transition shadow-sm text-sm">
+                  ▶ 動画を見る
+                </a>
+              </div>
+            )}
           </div>
 
           {isLoading ? (
