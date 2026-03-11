@@ -7,7 +7,6 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- ★フォントの太さ(700, 900)を追加し、より太い文字を表現できるようにしました -->
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700&family=Noto+Serif+SC:wght@400;600;700;900&display=swap" rel="stylesheet">
   <style>
     body { background-color: #f5f2ed; color: #1a1a1a; font-family: sans-serif; }
@@ -18,15 +17,15 @@
   <div id="root"></div>
 
   <script type="text/babel">
+    // ★GASを新しくデプロイし直した場合は、ここのURLも新しいものに変更してください
     const GAS_URL = "https://script.google.com/macros/s/AKfycbwg_UlQR6x4ebkLLSVef-x2DcY7_pfzuMZhTH5FV-yCdCiFeZTFwRptiWlEfWdLZ4ro/exec";
 
-    // ★ご要望のカラー順番に変更（緑色 → 青色 → 深緑 → 琥珀色 → 紫色）
     const PALETTES =[
-      { chinese: "text-green-800", speaker: "text-green-600", border: "border-green-400" },    // 1. 緑色
-      { chinese: "text-blue-800", speaker: "text-blue-600", border: "border-blue-400" },      // 2. 青色
-      { chinese: "text-teal-900", speaker: "text-teal-700", border: "border-teal-500" },      // 3. 深緑
-      { chinese: "text-amber-800", speaker: "text-amber-600", border: "border-amber-500" },   // 4. 琥珀色
-      { chinese: "text-purple-800", speaker: "text-purple-600", border: "border-purple-400" } // 5. 紫色
+      { chinese: "text-green-800", speaker: "text-green-600", border: "border-green-400" },
+      { chinese: "text-blue-800", speaker: "text-blue-600", border: "border-blue-400" },
+      { chinese: "text-teal-900", speaker: "text-teal-700", border: "border-teal-500" },
+      { chinese: "text-amber-800", speaker: "text-amber-600", border: "border-amber-500" },
+      { chinese: "text-purple-800", speaker: "text-purple-600", border: "border-purple-400" }
     ];
 
     const { useState, useRef, useEffect } = React;
@@ -34,14 +33,14 @@
 
     function App() {
       const [sheets, setSheets] = useState([]);
-      const [currentSheet, setCurrentSheet] = useState("");
+      const[currentSheet, setCurrentSheet] = useState("");
       const [conversation, setConversation] = useState([]);
-      const [videoUrl, setVideoUrl] = useState(""); // ★追加：動画URLを保存するState
+      const[videoUrl, setVideoUrl] = useState("");
       const [activeLine, setActiveLine] = useState(null);
       const [isRecording, setIsRecording] = useState(false);
       const [isPlaying, setIsPlaying] = useState(null);
       const [evalResults, setEvalResults] = useState({});
-      const [isLoading, setIsLoading] = useState(true);
+      const[isLoading, setIsLoading] = useState(true);
       const [loadingEval, setLoadingEval] = useState(null);
       
       const [speakerColors, setSpeakerColors] = useState({});
@@ -81,11 +80,9 @@
         try {
           const data = await fetchFromGAS({ action: "getLesson", sheetName: sheetName });
           
-          // ★修正：GASから送られてきたオブジェクトから、会話データと動画URLをそれぞれセットする
           setConversation(data.conversation);
           setVideoUrl(data.videoUrl);
           
-          // ★修正：data.map ではなく data.conversation.map に変更
           const uniqueSpeakers =[...new Set(data.conversation.map(item => item.speaker).filter(Boolean))];
           const newSpeakerColors = {};
           uniqueSpeakers.forEach((speaker, index) => {
@@ -180,7 +177,6 @@
               {sheets.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
 
-            {/* ★追加：動画URLが存在する場合のみ、動画リンクボタンを表示 */}
             {videoUrl && (
               <div className="mt-4">
                 <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white font-bold rounded-full hover:bg-red-700 transition shadow-sm text-sm">
@@ -200,22 +196,32 @@
                 return (
                 <div key={line.id} className={`border-l-4 pl-4 py-4 bg-white shadow-sm rounded-r-lg transition-all ${activeLine === line.id ? 'border-yellow-500 ring-2 ring-yellow-200' : palette.border}`}>
                   
-                  {/* 話者名の文字色（少しサイズアップして太くしました） */}
                   <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${palette.speaker}`}>{line.speaker}</p>
                   
                   <div onClick={() => playAudio(line)} className="cursor-pointer hover:bg-gray-50 p-2 rounded transition">
                     
-                    {/* ★中国語の文字色（text-4xlで少し大きくし、font-boldで極太にしました） */}
                     <p className={`text-4xl font-bold chinese-text mb-2 flex items-center gap-2 ${palette.chinese}`}>
                       {line.chinese}
                       {isPlaying === line.id && <span className="text-sm animate-pulse text-yellow-500 font-bold ml-2">Playing...</span>}
                     </p>
                     
-                    {/* ★ピンイン（少し太くしました） */}
                     <p className="text-base font-semibold text-gray-500 mb-2 font-mono">{line.pinyin}</p>
                     
-                    {/* ★日本語訳（少し大きく、太くしました） */}
-                    <p className="text-base font-bold text-gray-700 border-t border-gray-200 pt-2">{line.japanese}</p>
+                    {/* ★追加：日本語グループ（文法ポイントと日本語訳をまとめる） */}
+                    <div className="border-t border-gray-200 pt-2 mt-2">
+                      
+                      {/* 文法ポイント（スプレッドシートのF列にデータがある場合のみ表示） */}
+                      {line.grammar && (
+                        <p className="text-sm font-bold text-blue-700 mb-1 flex items-start gap-2">
+                          <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded whitespace-nowrap mt-0.5">文法</span>
+                          <span>{line.grammar}</span>
+                        </p>
+                      )}
+                      
+                      {/* 日本語訳 */}
+                      <p className="text-base font-bold text-gray-700">{line.japanese}</p>
+                    </div>
+
                   </div>
                   
                   <div className="mt-4 flex items-center gap-4">
