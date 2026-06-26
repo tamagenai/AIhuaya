@@ -93,7 +93,7 @@
           recognition.current = new SpeechRecognition();
           recognition.current.lang = 'zh-CN';
           recognition.current.interimResults = false;
-          recognition.current.onend = () => setIsRecording(false);
+          recognition.current.continuous = true; // ★追加: 息継ぎなどで自動停止しないようにする
           recognition.current.onerror = (e) => {
             alert("マイクエラー: " + e.error + "\n(※iPhone/iPadの場合、設定からマイクを許可してください)");
             setIsRecording(false);
@@ -175,7 +175,7 @@
 
       const toggleMic = (line) => {
         if (isRecording) {
-          recognition.current.stop();
+          recognition.current.stop(); // STOPボタンを押すと録音が終了し、onendが発火します
           return;
         }
         if (!recognition.current) {
@@ -185,10 +185,24 @@
         setActiveLine(line.id);
         setIsRecording(true);
 
+        let fullTranscript = ""; // ★追加: 認識したテキストを蓄積する変数
+
+        // ★修正: 認識結果が出るたびにテキストを結合する（ここではまだ判定しない）
         recognition.current.onresult = (event) => {
-          const transcript = event.results[0][0].transcript;
-          evaluate(line, transcript);
+          fullTranscript = "";
+          for (let i = 0; i < event.results.length; i++) {
+            fullTranscript += event.results[i][0].transcript;
+          }
         };
+
+        // ★追加: 録音が完全に終了したタイミングで、まとめて判定処理を行う
+        recognition.current.onend = () => {
+          setIsRecording(false);
+          if (fullTranscript.trim() !== "") {
+            evaluate(line, fullTranscript);
+          }
+        };
+
         recognition.current.start();
       };
 
