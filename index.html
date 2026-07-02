@@ -209,15 +209,70 @@
       const evaluate = async (line, transcript) => {
         setLoadingEval(line.id);
         try {
+          // ★追加：Web Speech APIが勝手に変換したアラビア数字を、正解テキストの漢数字に復元する関数
+          const fixNumbers = (text, target) => {
+            let fixed = text;
+            
+            // ★追加：iPhone(iOS)特有の時刻フォーマット (例: 2:30) を中国語の表現に変換
+            fixed = fixed.replace(/(\d+):30/g, (match, p1) => {
+              if (target.includes('点半')) return p1 + '点半';
+              return p1 + '点三十';
+            });
+            fixed = fixed.replace(/(\d+):00/g, '$1点');
+            fixed = fixed.replace(/(\d+):(\d+)/g, (match, p1, p2) => {
+              if (p2 === '15' && target.includes('一刻')) return p1 + '点一刻';
+              if (p2 === '45' && target.includes('三刻')) return p1 + '点三刻';
+              return p1 + '点' + p2 + (target.includes('分') ? '分' : '');
+            });
+
+            // 2桁の数字の処理（よくある時刻や年齢など）
+            const map2 = {
+              '10': '十', '11': '十一', '12': '十二', '13': '十三', '14': '十四', '15': '十五', '16': '十六', '17': '十七', '18': '十八', '19': '十九',
+              '20': '二十', '30': '三十', '40': '四十', '50': '五十', '60': '六十', '70': '七十', '80': '八十', '90': '九十'
+            };
+            for (const [num, han] of Object.entries(map2)) {
+              if (fixed.includes(num) && target.includes(han)) {
+                fixed = fixed.replace(new RegExp(num, 'g'), han);
+              }
+            }
+
+            // 1桁の数字の処理（2は「两」か「二」か、正解テキストに合わせて変換）
+            const map1 = {
+              '0': ['零', '〇'], '1': ['一', '幺'], '2': ['两', '二'], '3': ['三'], '4': ['四'], 
+              '5': ['五'], '6': ['六'], '7': ['七'], '8': ['八'], '9': ['九']
+            };
+            for (const [num, hans] of Object.entries(map1)) {
+              if (fixed.includes(num)) {
+                for (const han of hans) {
+                  if (target.includes(han)) {
+                    fixed = fixed.replace(new RegExp(num, 'g'), han);
+                    break;
+                  }
+                }
+              }
+            }
+
+            // 上記で変換されなかった残りのアラビア数字を強制的に漢数字にする（保険）
+            fixed = fixed.replace(/0/g, '零').replace(/1/g, '一').replace(/2/g, '二')
+                         .replace(/3/g, '三').replace(/4/g, '四').replace(/5/g, '五')
+                         .replace(/6/g, '六').replace(/7/g, '七').replace(/8/g, '八').replace(/9/g, '九');
+            
+            return fixed;
+          };
+
           const normalizeText = (text) => {
             if (!text) return "";
             return text.replace(/[\s　，。？！、：；“”‘’（）\(\)\[\]【】,\.\?!:;"']/g, '');
           };
 
-          const targetClean = normalizeText(line.chinese);
-          const userClean = normalizeText(transcript);
+          // ★修正：認識結果のアラビア数字を漢数字に補正する
+          const fixedTranscript = fixNumbers(transcript, line.chinese);
 
-          const userPinyinDisplay = pinyinPro.pinyin(transcript, { toneType: 'symbol' });
+          const targetClean = normalizeText(line.chinese);
+          const userClean = normalizeText(fixedTranscript); // ★補正後のテキストを使う
+
+          // ★修正：ピンイン変換も補正後のテキストで行う
+          const userPinyinDisplay = pinyinPro.pinyin(fixedTranscript, { toneType: 'symbol' });
 
           let score = 0;
           let feedback = "";
@@ -243,7 +298,8 @@
           }
           
           setTimeout(() => {
-            setEvalResults(prev => ({ ...prev,[line.id]: { score, feedback, transcript, userPinyinDisplay } }));
+            // ★修正：画面表示用にも補正後のテキスト(fixedTranscript)を渡す
+            setEvalResults(prev => ({ ...prev,[line.id]: { score, feedback, transcript: fixedTranscript, userPinyinDisplay } }));
             setLoadingEval(null);
           }, 600);
 
